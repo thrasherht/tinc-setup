@@ -1,7 +1,17 @@
 #Script to setup tinc
 #SSH key specifically for this script should first be added to the destination server
+
+#function for color coding
+red=`tput setaf 1`
+green=`tput setaf 2`
+purple=`tput setaf 5`
+white=`tput setaf 7`
+reset=`tput sgr0`
+bold=`tput bold`
+
 #initial clear of terminal
 clear
+echo "${white}"
 
 #Prereq checks
 #check for tinc on local server
@@ -26,14 +36,6 @@ ssh_key="~/.ssh/tinc-setup"
 
 #Set constants
 network_dir="$install_dir/$network_name"
-
-#function for color coding
-red=`tput setaf 1`
-green=`tput setaf 2`
-purple=`tput setaf 5`
-reset=`tput sgr0`
-bold=`tput bold`
-
 
 #Ping checking function
 ping_check() {
@@ -105,7 +107,8 @@ echo 'Subnet = $IP/32' > $network_dir/hosts/$node
 "
 
 #Generate keypairs
-$ssh_connect "tincd -n $network_name -K4096"
+$ssh_connect "tincd -n $network_name -K4096" &> /dev/null
+printf "Key pair generated\n"
 $ssh_connect "chmod 755 $network_dir/tinc-*"
 
 #Pull copy of host file to central server
@@ -123,3 +126,5 @@ $ssh_connect "echo 'servernet' >> $install_dir/nets.boot"
 sleep 5 #wait before performing the restart
 echo "Attempting to start tinc service...."
 $ssh_connect "systemctl restart tinc"
+
+printf "Setup finished${reset}\n\n\n\n\n\n"
