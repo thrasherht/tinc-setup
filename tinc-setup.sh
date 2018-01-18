@@ -1,130 +1,211 @@
-#Script to setup tinc
-#SSH key specifically for this script should first be added to the destination server
+#!/bin/bash
+#Author: Thrasherht
 
-#function for color coding
-red=`tput setaf 1`
-green=`tput setaf 2`
-purple=`tput setaf 5`
-white=`tput setaf 7`
-reset=`tput sgr0`
-bold=`tput bold`
+#Script to setup tincd on remote server
+#V1 assumes tinc is already setup on central node
+#V2 (Planned) Will be able to setup central tinc node.
 
-#initial clear of terminal
-clear
-echo "${white}"
+#main function to build out the script logic
+main() {
+	#setup starting Variables
+	start_var
+	reset_term
 
-#Prereq checks
-#check for tinc on local server
-printf "checking if tinc is installed on Local server.\n"
-if [ "$(which tincd)" == "" ]
-	then 
-		printf "Tinc not found on local server.\n"
-		exit 1
-	else 
-		printf "Tinc found, continuing with setup.\n"
-fi
+	#Make sure there is a key file on the local machine
+	file_check $keyfile 600
 
-#########################################################
-#Set base variables
-#User modifiable variables (Defaults should be ok)
-network_name="servernet"
-primary_node_name="collectionpoint"
-install_dir="/etc/tinc"
-ssh_key="~/.ssh/tinc-setup"
-#########################################################
+	#Verify that Tinc is installed locally
+	binary_check tincd
 
+	#Ask user for variables
+	read -p "Enter name of node: " node
+	read -p "Enter address of server being setup (IP or hostname): " host
 
-#Set constants
-network_dir="$install_dir/$network_name"
+	#Check to ensure tinc is installed on remote server
+	echo "checking if tinc is installed on remote server."
+	binary_check tindc remote
 
-#Ping checking function
-ping_check() {
-	x=1
-while [[ $? == 0 ]]
-	do ((x++))
-		ping -c1 -w2 $1.$x > /dev/null
-	done
-		echo "$1.$x is the first IP that did not ping"
+	#generate configurations on remote server
+	conf_gen | ssh_connect
+
+	#Generate keypairs and fix permissions
+	echo "tincd -n $network_name -K4096" | ssh_connect &> /dev/null
+	echo "chmod 755 $network_dir/tinc-*" | ssh_connect
+
+	#Pull copy of host file to central server
+	rsync -avHP -e "ssh -i $ssh_key" root@$server:$network_dir/hosts/$node $network_dir/hosts/$node &> /dev/null
+	echo "$node host file copied to $primary_node_name"
+
+	#Push copy of host file to new node
+	rsync -avHP $network_dir/hosts/$primary_node_name -e "ssh -i $ssh_key" root@$server:$network_dir/hosts/$primary_node_name &> /dev/null
+	echo "$primary_node_name host file copied to $node"
+
+	#set network to start on boot
+	echo "echo 'servernet' >> $install_dir/nets.boot" | ssh_connect
+
+	#Attempt to start service
+	sleep 5 #wait before performing the restart
+	echo "Attempting to start tinc service...."
+	echo "systemctl restart tinc" | ssh_connect
+
+	printf "Setup finished${reset}"
 }
 
-#Blank out input variables
-node=""
-server=""
-IP=""
+#Functions
+#############################
+start_var() {
+	#########################################################
+	#Set base variables
+	#User modifiable variables (Defaults should be ok)
+	network_name="datanet"
+	primary_node_name="headnode"
+	install_dir="/etc/tinc"
+	keyfile="tinc-setup"
 
-#Ask user for variables
-read -p "Enter name of node: " node
-read -p "Enter address of server being setup (IP or hostname): " server
-read -p "Would you like me to automatically find subnet for network? (y/n)" auto_subnet
+	#Set constants
+	network_dir="/tmp/$install_dir/$network_name"
 
-#Perform Subnet check
-if [ $auto_subnet = "y" ]
-	then
-		#Pull IP range from main configuration file
-		RANGE=$(grep "Subnet" $network_dir/hosts/$primary_node_name | awk {'print $3'} |cut -d. -f1,2,3)
-	else
-		#Ask user for IP range
-		read -p "IP range to use: " IPRANGE
-		RANGE=$(echo $IPRANGE | cut -d. -f1,2,3)
-fi
+	#Blank out input variables
+	node=""
+	host=""
+	IP=""
+	#########################################################
 
-#Set SSH connect command
-ssh_connect="ssh -i $ssh_key root@$server"
+	#function for color coding
+	red=`tput setaf 1`
+	green=`tput setaf 2`
+	purple=`tput setaf 5`
+	white=`tput setaf 7`
+	reset=`tput sgr0`
+	bold=`tput bold`
+}
 
-#Check for usable IP address and output first
-echo "Ping checking for usable IPs in range"
-#ping and find first available ip in range and display that IP
-ping_check $RANGE
+#clear terminal and set color to white
+reset_term() {
+	clear; echo "${white}"
+}
 
-#find out which IP user wants to use.
-read -p "Enter IP for this node to use: " IP
+#Perform SSH connection and pass commands to remote server
+#arguments provided act as command input. No arguments can also be used.
+ssh_connect() {
+	local key=$keyfile
+	local server=$host
+	local commands="$@"
 
-#Check to ensure tinc is installed on remote server
-printf "checking if tinc is installed on remote server."
-sleep 1
-if [ "$($ssh_connect which tincd)" == "" ]
-	then 
-		printf "Tinc not found on remote server.\n"
-		exit 1
-	else 
-		printf "Tinc found, continuing with setup.\n"
-fi
+	ssh -i $key root@$host $commands
+}
 
-#Create configuration files
-echo "Creating configuration files"
-$ssh_connect "mkdir -p $network_dir/hosts
-touch $network_dir/tinc.conf
-touch $network_dir/tinc-up
-touch $network_dir/tinc-down
-touch $network_dir/hosts/$node
-echo 'ifconfig \$INTERFACE down' > $network_dir/tinc-down
-echo 'ifconfig \$INTERFACE $IP netmask 255.255.255.0' > $network_dir/tinc-up
-echo 'Name = $node
-AddressFamily = ipv4
-Interface = tun0
-ConnectTo = $primary_node_name' > $network_dir/tinc.conf
-echo 'Subnet = $IP/32' > $network_dir/hosts/$node
-"
+#Use ping find the first non-responding IP to use for new node.
+#No input variables. Pulls starting IP from configuration files.
+find_ip() {
+	local x=1
+	local iprange=$(grep "Subnet" $network_dir/hosts/$primary_node_name | awk {'print $3'} |cut -d. -f1,2,3)
+	local new_ip="n"
 
-#Generate keypairs
-$ssh_connect "tincd -n $network_name -K4096" &> /dev/null
-printf "Key pair generated\n"
-$ssh_connect "chmod 755 $network_dir/tinc-*"
+	#Internal function to perform looping ping test
+	ping_test() {
+		while [[ $? == 0 ]]
+			do ((x++))
+				ping -c1 -w2 $iprange.$x > /dev/null
+			done
+	}
 
-#Pull copy of host file to central server
-rsync -avHP -e "ssh -i $ssh_key" root@$server:$network_dir/hosts/$node $network_dir/hosts/$node &> /dev/null
-echo "$node host file copied to $primary_node_name"
+while [ "$new_ip" == "n" ]
+	do
+		ping_test
+		read -p "IP $iprange.$x is the first to not respond, would you like to use this for the new node (y/n)" new_ip
+	done
 
-#Push copy of host file to new node
-rsync -avHP $network_dir/hosts/$primary_node_name -e "ssh -i $ssh_key" root@$server:$network_dir/hosts/$primary_node_name &> /dev/null
-echo "$primary_node_name host file copied to $node"
+	#set IP to be used for new node
+	node_ip="$iprange.$x"
+}
 
-#set network to start on boot
-$ssh_connect "echo 'servernet' >> $install_dir/nets.boot"
+#Check if binary exists in PATH
+#Input variables
+#1: binary to be checked
+#2: remote to perform check on remote server. Server is based on $host variable.
+binary_check() {
+	local binary=$1
+	local remote=$2
 
-#Attempt to start service
-sleep 5 #wait before performing the restart
-echo "Attempting to start tinc service...."
-$ssh_connect "systemctl restart tinc"
+	if [ "$#" -eq 1 ]; then
+			if [ "$(which $binary)" != "" ]
+				then
+					#success
+					:
+				else
+					#check failed, kill script.
+					echo "${red}Binary check failed on $binary. (Local)"
+					exit 1
+			fi
+	elif [ "$remote" == "remote" ]
+		then
+			if [ "$(ssh_connect $server $key which $binary)" != "" ]
+				then
+					#success
+					:
+				else
+					echo "${red}Remote binary check failed on $binary for server $server"
+					exit 1
+			fi
+	fi
+}
 
-printf "Setup finished${reset}\n\n\n\n\n\n"
+#Check if file exist, and if permission is provided verify permission.
+#Will correct permission if it is wrong.
+#inputs 1: filepath 2: permission value
+file_check() {
+	local file=$1
+	local perm=$2
+
+	if [ "$#" -eq 1 ]; then
+			if [ -f $file ]
+				then
+					#success
+					:
+				else
+					#check failed, kill script.
+					echo "${red}File check failed, $file doesn't exist"
+					exit 1
+			fi
+	elif [ "$#" -eq 2 ]
+		then
+			if [ -f $file ]
+				then
+					if [ $(stat -c "%a" "$file") == "$perm" ]
+						then
+							#success
+							:
+						else
+							#check failed, kill script
+							echo "File permissions incorrect for $file, desired permissions $perm"
+							echo "chmod performed on $file"
+							#Fix permissions
+							chown $perm $file
+			fi
+			else
+				#check failed, kill script.
+				echo "${red}File check failed, $file doesn't exist"
+				exit 1
+		fi
+	fi
+}
+
+conf_gen() {
+	#echo out commands for conf generation.
+	echo "
+	mkdir -p $network_dir/hosts
+	touch $network_dir/tinc.conf
+	touch $network_dir/tinc-up
+	touch $network_dir/tinc-down
+	touch $network_dir/hosts/$node
+	echo 'ifconfig \$INTERFACE down' > $network_dir/tinc-down
+	echo 'ifconfig \$INTERFACE $IP netmask 255.255.255.0' > $network_dir/tinc-up
+	echo 'Name = $node
+	AddressFamily = ipv4
+	Interface = tun0
+	ConnectTo = $primary_node_name' > $network_dir/tinc.conf
+	echo 'Subnet = $IP/32' > $network_dir/hosts/$node"
+}
+
+main
