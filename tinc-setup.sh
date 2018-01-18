@@ -1,8 +1,10 @@
 #!/bin/bash
+
 #Author: Thrasherht
 #Script to setup tincd on remote server
 #V1 assumes tinc is already setup on central node
 #V2 (Planned) Will be able to setup central tinc node.
+
 
 #main function to build out the script logic
 main() {
