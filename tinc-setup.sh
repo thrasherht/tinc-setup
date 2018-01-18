@@ -7,9 +7,12 @@
 
 #main function to build out the script logic
 main() {
-	#setup starting Variables
+	#setup starting Variables and reset terminal
 	start_var
 	reset_term
+	#get package installer
+	installer_get
+
 
 	#Make sure there is a key file on the local machine
 	file_check $keyfile 600
@@ -18,11 +21,9 @@ main() {
 	binary_check tincd
 
 	#Ask user for variables
-	read -p "Enter name of node: " node
-	read -p "Enter address of server being setup (IP or hostname): " host
+	user_var
 
 	#Check to ensure tinc is installed on remote server
-	echo "checking if tinc is installed on remote server."
 	binary_check tindc remote
 
 	#generate configurations on remote server
@@ -54,7 +55,6 @@ main() {
 #Functions
 #############################
 start_var() {
-	#########################################################
 	#Set base variables
 	#User modifiable variables (Defaults should be ok)
 	network_name="datanet"
@@ -69,15 +69,22 @@ start_var() {
 	node=""
 	host=""
 	IP=""
-	#########################################################
 
 	#function for color coding
 	red=`tput setaf 1`
 	green=`tput setaf 2`
+	yellow=`tput setaf 3`
+	blue=`tput setaf 4`
 	purple=`tput setaf 5`
 	white=`tput setaf 7`
 	reset=`tput sgr0`
 	bold=`tput bold`
+}
+
+user_var() {
+	#Ask user for variables
+	read -p "${bold}Enter name of node: ${reset}" node
+	read -p "${bold}Enter address of server being setup (IP or hostname): ${reset}" host
 }
 
 #clear terminal and set color to white
@@ -178,8 +185,8 @@ file_check() {
 							:
 						else
 							#check failed, kill script
-							echo "File permissions incorrect for $file, desired permissions $perm"
-							echo "chmod performed on $file"
+							echo "${blue}File permissions incorrect for $file, desired permissions $perm"
+							echo "chmod performed on $file${reset}"
 							#Fix permissions
 							chown $perm $file
 			fi
@@ -206,6 +213,18 @@ conf_gen() {
 	Interface = tun0
 	ConnectTo = $primary_node_name' > $network_dir/tinc.conf
 	echo 'Subnet = $IP/32' > $network_dir/hosts/$node"
+}
+
+installer_get() {
+	if [ "$(which apt)" != '' ]
+		then
+			installer="apt"
+			echo "${green} Server appears to use apt. Using apt for package installs"
+		else
+			installer="yum"
+			echo "${green} Server appears to use yum. Using yum for package installs"
+	fi
+	echo "${reset}"
 }
 
 main
