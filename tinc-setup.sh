@@ -1,6 +1,5 @@
 #!/bin/bash
 #Author: Thrasherht
-
 #Script to setup tincd on remote server
 #V1 assumes tinc is already setup on central node
 #V2 (Planned) Will be able to setup central tinc node.
@@ -47,7 +46,6 @@ main() {
 }
 
 #Functions
-#############################
 start_var() {
 	#Set base variables
 	#User modifiable variables (Defaults should be ok)
@@ -58,7 +56,7 @@ start_var() {
 	central_ip="172.16.10.1"
 
 	#Set constants
-	network_dir="/tmp/$install_dir/$network_name"
+	network_dir="$install_dir/$network_name"
 
 	#function for color coding
 	red=`tput setaf 1`
