@@ -17,20 +17,7 @@ main() {
 	file_check $keyfile 600
 
 	#Verify that Tinc is installed locally
-	if binary_check tincd
-		then
-			: #tinc installed, good to setup new node
-		else
-			echo "It looks like this server does not have tinc installed."
-			read -p "Would you like to setup a new central node? (y/n)" cental_setup
-	fi
-
-	if [ '$cental_setup' == 'y' ]
-		then
-			: #central node setup goes here
-		else
-			user_var_node
-	fi
+	central_node_check
 
 	#Check to ensure tinc is installed on remote server
 	binary_check tindc remote
@@ -72,10 +59,6 @@ start_var() {
 
 	#Set constants
 	network_dir="/tmp/$install_dir/$network_name"
-
-	#Blank out input variables
-	node=""
-	host=""
 
 	#function for color coding
 	red=`tput setaf 1`
@@ -227,6 +210,19 @@ conf_gen() {
 	echo 'Subnet = $IP/32' > $network_dir/hosts/$node"
 }
 
+#generate keypairs
+keypair_gen() {
+	tincd -n $network_name -K4096
+}
+
+#set permissions on entire directory
+dir_perm_fix() {
+	local dir=$1
+	local perm=$2
+	chmod -R $perm $dir
+}
+
+
 installer_get() {
 	if [ "$(which apt)" != '' ]
 		then
@@ -237,6 +233,23 @@ installer_get() {
 			echo "${green} Server appears to use yum. Using yum for package installs"
 	fi
 	echo "${reset}"
+}
+
+central_node_check() {
+	if binary_check tincd
+	then
+		: #tinc installed, good to setup new node
+	else
+		echo "It looks like this server does not have tinc installed."
+		read -p "Would you like to setup a new central node? (y/n)" cental_setup
+fi
+
+if [ '$cental_setup' == 'y' ]
+	then
+		: #central node setup goes here
+	else
+		user_var_node
+fi
 }
 
 main
