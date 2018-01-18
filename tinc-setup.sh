@@ -13,15 +13,24 @@ main() {
 	#get package installer
 	installer_get
 
-
 	#Make sure there is a key file on the local machine
 	file_check $keyfile 600
 
 	#Verify that Tinc is installed locally
-	binary_check tincd
+	if binary_check tincd
+		then
+			: #tinc installed, good to setup new node
+		else
+			echo "It looks like this server does not have tinc installed."
+			read -p "Would you like to setup a new central node? (y/n)" cental_setup
+	fi
 
-	#Ask user for variables
-	user_var
+	if [ '$cental_setup' == 'y' ]
+		then
+			: #central node setup goes here
+		else
+			user_var_node
+	fi
 
 	#Check to ensure tinc is installed on remote server
 	binary_check tindc remote
@@ -35,17 +44,15 @@ main() {
 
 	#Pull copy of host file to central server
 	rsync -avHP -e "ssh -i $ssh_key" root@$server:$network_dir/hosts/$node $network_dir/hosts/$node &> /dev/null
-	echo "$node host file copied to $primary_node_name"
 
 	#Push copy of host file to new node
 	rsync -avHP $network_dir/hosts/$primary_node_name -e "ssh -i $ssh_key" root@$server:$network_dir/hosts/$primary_node_name &> /dev/null
-	echo "$primary_node_name host file copied to $node"
 
 	#set network to start on boot
 	echo "echo 'servernet' >> $install_dir/nets.boot" | ssh_connect
 
 	#Attempt to start service
-	sleep 5 #wait before performing the restart
+	sleep 2 #wait before performing the restart
 	echo "Attempting to start tinc service...."
 	echo "systemctl restart tinc" | ssh_connect
 
@@ -61,6 +68,7 @@ start_var() {
 	primary_node_name="headnode"
 	install_dir="/etc/tinc"
 	keyfile="tinc-setup"
+	central_ip="172.16.10.1"
 
 	#Set constants
 	network_dir="/tmp/$install_dir/$network_name"
@@ -68,7 +76,6 @@ start_var() {
 	#Blank out input variables
 	node=""
 	host=""
-	IP=""
 
 	#function for color coding
 	red=`tput setaf 1`
@@ -81,10 +88,15 @@ start_var() {
 	bold=`tput bold`
 }
 
-user_var() {
+user_var_node() {
 	#Ask user for variables
 	read -p "${bold}Enter name of node: ${reset}" node
 	read -p "${bold}Enter address of server being setup (IP or hostname): ${reset}" host
+}
+
+user_var_central() {
+	read -p "Name of central node? (Default: $primary_node_name): " primary_node_name
+	read -p "What IP to use internal IP on $primary_node_name (Default: $central_ip): " central_ip
 }
 
 #clear terminal and set color to white
@@ -113,7 +125,7 @@ find_ip() {
 	ping_test() {
 		while [[ $? == 0 ]]
 			do ((x++))
-				ping -c1 -w2 $iprange.$x > /dev/null
+				ping -c1 -w1 $iprange.$x > /dev/null
 			done
 	}
 
@@ -221,7 +233,7 @@ installer_get() {
 			installer="apt"
 			echo "${green} Server appears to use apt. Using apt for package installs"
 		else
-			installer="yum"
+			installer="yum -y"
 			echo "${green} Server appears to use yum. Using yum for package installs"
 	fi
 	echo "${reset}"
