@@ -26,8 +26,8 @@ main() {
 	conf_gen | ssh_connect
 
 	#Generate keypairs and fix permissions
-	echo "tincd -n $network_name -K4096" | ssh_connect &> /dev/null
-	echo "chmod 755 $network_dir/tinc-*" | ssh_connect
+	keypair_gen | ssh_connect
+	file_check "$network_dir/tinc-*" 755 | ssh_connect
 
 	#Pull copy of host file to central server
 	rsync -avHP -e "ssh -i $ssh_key" root@$server:$network_dir/hosts/$node $network_dir/hosts/$node &> /dev/null
@@ -183,7 +183,7 @@ file_check() {
 							echo "${blue}File permissions incorrect for $file, desired permissions $perm"
 							echo "chmod performed on $file${reset}"
 							#Fix permissions
-							chown $perm $file
+							chmod $perm $file
 			fi
 			else
 				#check failed, kill script.
