@@ -115,16 +115,6 @@ find_ip() {
 			done
 	}
 
-while [ "$new_ip" == "n" ]
-	do
-		ping_test
-		read -p "IP $iprange.$x is the first to not respond, would you like to use this for the new node (y/n)" new_ip
-	done
-
-	#set IP to be used for new node
-	node_ip="$iprange.$x"
-}
-
 #Check if binary exists in PATH
 #Input variables
 #1: binary to be checked
