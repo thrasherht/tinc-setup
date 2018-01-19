@@ -12,14 +12,12 @@ main() {
 	installer_get
 
 	#Make sure there is a key file on the local machine, and generate one if there isn't
-	set -x
 	if file_check $keyfile
 		then
 			:
 		else
 			ssh_kgen
 	fi
-	set +x
 	#Verify that Tinc is installed locally
 	central_node_check
 
