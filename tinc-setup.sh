@@ -11,9 +11,15 @@ main() {
 	#get package installer
 	installer_get
 
-	#Make sure there is a key file on the local machine
-	file_check $keyfile 600
-
+	#Make sure there is a key file on the local machine, and generate one if there isn't
+	set -x
+	if file_check $keyfile
+		then
+			:
+		else
+			ssh_kgen
+	fi
+	set +x
 	#Verify that Tinc is installed locally
 	central_node_check
 
@@ -48,12 +54,12 @@ main() {
 start_var() {
 	#Set base variables
 	#User modifiable variables (Defaults should be ok)
+	pwd=$(pwd)
 	network_name="datanet"
 	primary_node_name="headnode"
 	install_dir="/etc/tinc"
-	keyfile="tinc-setup"
+	keyfile="$pwd/.ssh/tinc-setup"
 	central_ip="172.16.10.1"
-
 	#Set constants
 	network_dir="$install_dir/$network_name"
 
@@ -158,7 +164,7 @@ file_check() {
 	local perm=$2
 
 	if [ "$#" -eq 1 ]; then
-			if [ -f $file ]
+			if [ -f "$file" ]
 				then
 					#success
 					:
@@ -210,6 +216,11 @@ conf_gen() {
 #generate keypairs
 keypair_gen() {
 	tincd -n $network_name -K4096
+}
+
+#Generate SSH keyfile
+ssh_kgen() {
+	ssh-keygen -b 4096 -t rsa -N '' -f $keyfile
 }
 
 #set permissions on entire directory
